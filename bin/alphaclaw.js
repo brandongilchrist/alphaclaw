@@ -507,11 +507,18 @@ if (!gogInstalled) {
     const arch = os.arch() === "arm64" ? "arm64" : "amd64";
     const tarball = `gogcli_${gogVersion}_${platform}_${arch}.tar.gz`;
     const url = `https://github.com/steipete/gogcli/releases/download/v${gogVersion}/${tarball}`;
+    // On macOS, install to a user-local bin directory to avoid needing sudo
+    const gogInstallDir = os.platform() === "darwin"
+      ? path.join(os.homedir(), ".alphaclaw", "bin")
+      : "/usr/local/bin";
+    const gogInstallPath = path.join(gogInstallDir, "gog");
+    const tmpDir = os.tmpdir();
+    fs.mkdirSync(gogInstallDir, { recursive: true });
     execSync(
-      `curl -fsSL "${url}" -o /tmp/gog.tar.gz && tar -xzf /tmp/gog.tar.gz -C /tmp/ && mv /tmp/gog /usr/local/bin/gog && chmod +x /usr/local/bin/gog && rm -f /tmp/gog.tar.gz`,
+      `curl -fsSL "${url}" -o "${tmpDir}/gog.tar.gz" && tar -xzf "${tmpDir}/gog.tar.gz" -C "${tmpDir}/" && mv "${tmpDir}/gog" "${gogInstallPath}" && chmod +x "${gogInstallPath}" && rm -f "${tmpDir}/gog.tar.gz"`,
       { stdio: "inherit" },
     );
-    console.log("[alphaclaw] gog CLI installed");
+    console.log(`[alphaclaw] gog CLI installed at ${gogInstallPath}`);
   } catch (e) {
     console.log(`[alphaclaw] gog install skipped: ${e.message}`);
   }
@@ -562,21 +569,101 @@ if (fs.existsSync(hourlyGitSyncPath)) {
       } catch {}
     }
 
-    const cronFilePath = "/etc/cron.d/openclaw-hourly-sync";
-    if (cronEnabled) {
-      const cronContent = [
-        "SHELL=/bin/bash",
-        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        `${cronSchedule} root bash "${hourlyGitSyncPath}" >> /var/log/openclaw-hourly-sync.log 2>&1`,
-        "",
-      ].join("\n");
-      fs.writeFileSync(cronFilePath, cronContent, { mode: 0o644 });
-      console.log("[alphaclaw] System cron entry installed");
+    const isMacOS = os.platform() === "darwin";
+
+    if (isMacOS) {
+      // macOS: use launchd plist instead of /etc/cron.d/
+      const launchAgentsDir = path.join(os.homedir(), "Library", "LaunchAgents");
+      const plistPath = path.join(launchAgentsDir, "com.alphaclaw.hourly-sync.plist");
+
+      // Parse cron schedule minute/hour fields for launchd interval
+      const cronParts = cronSchedule.split(/\s+/);
+      const cronMinute = cronParts[0] || "0";
+      const cronHour = cronParts[1] || "*";
+      // Default to hourly (3600s); adjust if cron schedule specifies differently
+      let intervalSeconds = 3600;
+      if (cronHour !== "*" && cronMinute !== "*") {
+        intervalSeconds = 0;
+      }
+
+      if (cronEnabled) {
+        fs.mkdirSync(launchAgentsDir, { recursive: true });
+        const logsDir = path.join(rootDir, "logs");
+        fs.mkdirSync(logsDir, { recursive: true });
+        let calendarOrInterval;
+        if (intervalSeconds > 0) {
+          calendarOrInterval = `    <key>StartInterval</key>
+    <integer>${intervalSeconds}</integer>`;
+        } else {
+          calendarOrInterval = `    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Minute</key>
+      <integer>${Number.parseInt(cronMinute, 10) || 0}</integer>
+      <key>Hour</key>
+      <integer>${Number.parseInt(cronHour, 10) || 0}</integer>
+    </dict>`;
+        }
+        const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphaclaw.hourly-sync</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/bash</string>
+      <string>${hourlyGitSyncPath}</string>
+    </array>
+${calendarOrInterval}
+    <key>StandardOutPath</key>
+    <string>${path.join(logsDir, "hourly-sync.log")}</string>
+    <key>StandardErrorPath</key>
+    <string>${path.join(logsDir, "hourly-sync.log")}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>`;
+        fs.writeFileSync(plistPath, plistContent, { mode: 0o644 });
+        try {
+          execSync(`launchctl bootout gui/$(id -u) "${plistPath}" 2>/dev/null; true`);
+          execSync(`launchctl bootstrap gui/$(id -u) "${plistPath}"`);
+        } catch {
+          try {
+            execSync(`launchctl unload "${plistPath}" 2>/dev/null; true`);
+            execSync(`launchctl load "${plistPath}"`);
+          } catch {}
+        }
+        console.log("[alphaclaw] LaunchAgent plist installed for hourly sync");
+      } else {
+        try {
+          execSync(`launchctl bootout gui/$(id -u) "${plistPath}" 2>/dev/null; true`);
+        } catch {
+          try { execSync(`launchctl unload "${plistPath}" 2>/dev/null; true`); } catch {}
+        }
+        try { fs.unlinkSync(plistPath); } catch {}
+        console.log("[alphaclaw] LaunchAgent plist disabled for hourly sync");
+      }
     } else {
-      try {
-        fs.unlinkSync(cronFilePath);
-      } catch {}
-      console.log("[alphaclaw] System cron entry disabled");
+      // Linux: use /etc/cron.d/
+      const cronFilePath = "/etc/cron.d/openclaw-hourly-sync";
+      if (cronEnabled) {
+        const cronContent = [
+          "SHELL=/bin/bash",
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          `${cronSchedule} root bash "${hourlyGitSyncPath}" >> /var/log/openclaw-hourly-sync.log 2>&1`,
+          "",
+        ].join("\n");
+        fs.writeFileSync(cronFilePath, cronContent, { mode: 0o644 });
+        console.log("[alphaclaw] System cron entry installed");
+      } else {
+        try {
+          fs.unlinkSync(cronFilePath);
+        } catch {}
+        console.log("[alphaclaw] System cron entry disabled");
+      }
     }
   } catch (e) {
     console.log(`[alphaclaw] Cron setup skipped: ${e.message}`);
@@ -584,18 +671,20 @@ if (fs.existsSync(hourlyGitSyncPath)) {
 }
 
 // ---------------------------------------------------------------------------
-// 9. Start cron daemon if available
+// 9. Start cron daemon if available (Linux only — macOS uses launchd above)
 // ---------------------------------------------------------------------------
 
-try {
-  execSync("command -v cron", { stdio: "ignore" });
+if (os.platform() !== "darwin") {
   try {
-    execSync("pgrep -x cron", { stdio: "ignore" });
-  } catch {
-    execSync("cron", { stdio: "ignore" });
-  }
-  console.log("[alphaclaw] Cron daemon running");
-} catch {}
+    execSync("command -v cron", { stdio: "ignore" });
+    try {
+      execSync("pgrep -x cron", { stdio: "ignore" });
+    } catch {
+      execSync("cron", { stdio: "ignore" });
+    }
+    console.log("[alphaclaw] Cron daemon running");
+  } catch {}
+}
 
 // ---------------------------------------------------------------------------
 // 10. Reconcile channels if already onboarded
@@ -815,19 +904,22 @@ if (fs.existsSync(configPath)) {
 
 // ---------------------------------------------------------------------------
 // 12. Install systemctl shim if in Docker (no real systemd)
+//     Skipped on macOS — macOS uses launchd natively and does not need a shim.
 // ---------------------------------------------------------------------------
 
-try {
-  execSync("command -v systemctl", { stdio: "ignore" });
-} catch {
-  const shimSrc = path.join(__dirname, "..", "lib", "scripts", "systemctl");
-  const shimDest = "/usr/local/bin/systemctl";
+if (os.platform() !== "darwin") {
   try {
-    fs.copyFileSync(shimSrc, shimDest);
-    fs.chmodSync(shimDest, 0o755);
-    console.log("[alphaclaw] systemctl shim installed");
-  } catch (e) {
-    console.log(`[alphaclaw] systemctl shim skipped: ${e.message}`);
+    execSync("command -v systemctl", { stdio: "ignore" });
+  } catch {
+    const shimSrc = path.join(__dirname, "..", "lib", "scripts", "systemctl");
+    const shimDest = "/usr/local/bin/systemctl";
+    try {
+      fs.copyFileSync(shimSrc, shimDest);
+      fs.chmodSync(shimDest, 0o755);
+      console.log("[alphaclaw] systemctl shim installed");
+    } catch (e) {
+      console.log(`[alphaclaw] systemctl shim skipped: ${e.message}`);
+    }
   }
 }
 
@@ -837,9 +929,13 @@ try {
 
 try {
   const gitAskPassSrc = path.join(__dirname, "..", "lib", "scripts", "git-askpass");
-  const gitAskPassDest = "/tmp/alphaclaw-git-askpass.sh";
+  const gitAskPassDest = path.join(os.tmpdir(), "alphaclaw-git-askpass.sh");
   const gitShimTemplatePath = path.join(__dirname, "..", "lib", "scripts", "git");
-  const gitShimDest = "/usr/local/bin/git";
+  // On macOS, prefer a user-local shim directory to avoid conflicts with
+  // Xcode CLT git at /usr/bin/git and Homebrew git at /opt/homebrew/bin/git.
+  const gitShimDest = os.platform() === "darwin"
+    ? path.join(os.homedir(), ".alphaclaw", "bin", "git")
+    : "/usr/local/bin/git";
 
   if (fs.existsSync(gitAskPassSrc)) {
     fs.copyFileSync(gitAskPassSrc, gitAskPassDest);
@@ -847,7 +943,8 @@ try {
   }
 
   if (fs.existsSync(gitShimTemplatePath)) {
-    let realGitPath = "/usr/bin/git";
+    // On macOS, default to common Homebrew or Xcode CLT locations
+    let realGitPath = os.platform() === "darwin" ? "/usr/bin/git" : "/usr/bin/git";
     try {
       const gitCandidates = String(
         execSync("which -a git", {
@@ -865,12 +962,23 @@ try {
       if (selectedCandidate) realGitPath = selectedCandidate;
     } catch {}
 
+    // Ensure the shim directory exists on macOS
+    const shimDir = path.dirname(gitShimDest);
+    fs.mkdirSync(shimDir, { recursive: true });
+
     const gitShimTemplate = fs.readFileSync(gitShimTemplatePath, "utf8");
     const gitShimContent = gitShimTemplate
       .replace("@@REAL_GIT@@", realGitPath)
-      .replace("@@OPENCLAW_REPO_ROOT@@", openclawDir);
+      .replace("@@OPENCLAW_REPO_ROOT@@", openclawDir)
+      .replace("/tmp/alphaclaw-git-askpass.sh", gitAskPassDest);
     fs.writeFileSync(gitShimDest, gitShimContent, { mode: 0o755 });
-    console.log("[alphaclaw] git auth shim installed");
+
+    if (os.platform() === "darwin") {
+      console.log(`[alphaclaw] git auth shim installed at ${gitShimDest}`);
+      console.log(`[alphaclaw] Add ${shimDir} to your PATH to use the git auth shim`);
+    } else {
+      console.log("[alphaclaw] git auth shim installed");
+    }
   }
 } catch (e) {
   console.log(`[alphaclaw] git auth shim skipped: ${e.message}`);

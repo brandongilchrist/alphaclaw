@@ -1,6 +1,7 @@
 #!/bin/bash
 # systemctl shim for Docker (no real systemd available)
 # Translates restart/stop/status into process signals so the Express wrapper handles lifecycle.
+# Note: This shim is only installed on Linux. macOS uses launchd natively.
 
 ACTION=""
 UNIT=""
@@ -11,6 +12,9 @@ for arg in "$@"; do
     *) [ -n "$ACTION" ] && [ -z "$UNIT" ] && UNIT="$arg" ;;
   esac
 done
+
+# Resolve the openclaw data directory
+OPENCLAW_DATA="${ALPHACLAW_ROOT_DIR:-${HOME}/.alphaclaw}/.openclaw"
 
 case "$ACTION" in
   status)
@@ -44,7 +48,7 @@ case "$ACTION" in
     pkill -TERM -f "openclaw gateway" 2>/dev/null || true
     sleep 1
     pkill -9 -f "openclaw gateway" 2>/dev/null || true
-    rm -f /data/.openclaw/gateway.lock /data/.openclaw/gateway.pid 2>/dev/null
+    rm -f "${OPENCLAW_DATA}/gateway.lock" "${OPENCLAW_DATA}/gateway.pid" 2>/dev/null
     exit 0
     ;;
   start|enable|is-enabled|disable|daemon-reload|show)
