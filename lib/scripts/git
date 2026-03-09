@@ -1,10 +1,11 @@
 #!/bin/bash
 # Git auth shim -- injects GITHUB_TOKEN credentials for network operations
 # inside the configured OpenClaw repo so the agent can use plain git commands.
+# Works on both Linux and macOS.
 
 REAL_GIT="@@REAL_GIT@@"
 OPENCLAW_REPO_ROOT="@@OPENCLAW_REPO_ROOT@@"
-ASKPASS_PATH="/tmp/alphaclaw-git-askpass.sh"
+ASKPASS_PATH="${TMPDIR:-/tmp}/alphaclaw-git-askpass.sh"
 
 SUBCMD=""
 for arg in "$@"; do

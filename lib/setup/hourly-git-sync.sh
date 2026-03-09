@@ -4,12 +4,17 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
 
-# Load persisted env vars when running under cron's minimal environment.
+# Load persisted env vars when running under cron/launchd's minimal environment.
 if [[ -f "$REPO/.env" ]]; then
   set -a
   # shellcheck disable=SC1091
   source "$REPO/.env"
   set +a
+fi
+
+# On macOS, ensure Homebrew and user-local bins are in PATH
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  export PATH="/opt/homebrew/bin:/usr/local/bin:${HOME}/.alphaclaw/bin:${PATH}"
 fi
 
 # Drop cron scheduler runtime-only churn when it is metadata/timestamp-only.
@@ -92,6 +97,13 @@ resolve_alphaclaw_cmd() {
     "$REPO/node_modules/.bin/alphaclaw"
     "$REPO/../node_modules/.bin/alphaclaw"
   )
+  # On macOS, also check user-local paths
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    candidate_paths+=(
+      "${HOME}/.alphaclaw/node_modules/.bin/alphaclaw"
+      "/opt/homebrew/bin/alphaclaw"
+    )
+  fi
   local candidate
   for candidate in "${candidate_paths[@]}"; do
     if [[ -x "$candidate" ]]; then
@@ -103,6 +115,7 @@ resolve_alphaclaw_cmd() {
   return 1
 }
 
+# Use portable date format (macOS date doesn't support --utc, use -u instead)
 msg="Auto-commit hourly sync $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 alphaclaw_cmd="$(resolve_alphaclaw_cmd || true)"
 if [[ -z "${alphaclaw_cmd:-}" ]]; then

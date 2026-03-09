@@ -22,7 +22,7 @@
   <a href="https://render.com/deploy?repo=https://github.com/chrysb/openclaw-render-template"><img src="https://render.com/images/deploy-to-render-button.svg" alt="Deploy to Render" /></a>
 </p>
 
-> **Platform:** AlphaClaw currently targets Docker/Linux deployments. macOS local development is not yet supported.
+> **Platform:** AlphaClaw supports Docker/Linux deployments and macOS local development. On macOS, scheduled tasks use launchd (LaunchAgents), system resource monitoring uses `vm_stat` and `os.loadavg()`, and CLI tools are installed to `~/.alphaclaw/bin/`.
 
 ## Features
 
@@ -64,6 +64,12 @@ Set `SETUP_PASSWORD` at deploy time and visit your deployment URL. The welcome w
 ```bash
 npm install @chrysb/alphaclaw
 npx alphaclaw start
+```
+
+On macOS, add the AlphaClaw bin directory to your PATH for git auth shim and gog CLI:
+
+```bash
+export PATH="$HOME/.alphaclaw/bin:$PATH"
 ```
 
 Or with Docker:
