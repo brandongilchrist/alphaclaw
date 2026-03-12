@@ -7,4 +7,4 @@ COPY . .
 ENV PATH="/app/node_modules/.bin:$PATH"
 ENV ALPHACLAW_ROOT_DIR=/data
 EXPOSE 3000
-CMD ["alphaclaw", "start", "--port", "3000"]
+CMD ["alphaclaw", "start"]
