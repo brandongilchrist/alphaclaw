@@ -20,7 +20,6 @@
 <p align="center">
   <a href="https://railway.com/deploy/openclaw-fast-start?referralCode=jcFhp_&utm_medium=integration&utm_source=template&utm_campaign=generic"><img src="https://railway.com/button.svg" alt="Deploy on Railway" /></a>
   <a href="https://render.com/deploy?repo=https://github.com/chrysb/openclaw-render-template"><img src="https://render.com/images/deploy-to-render-button.svg" alt="Deploy to Render" /></a>
-  <a href="https://deploy.cloud.run?git_repo=https://github.com/brandongilchrist/alphaclaw"><img src="https://deploy.cloud.run/button.svg" alt="Run on Google Cloud" /></a>
 </p>
 
 > **Platform:** AlphaClaw supports Docker/Linux deployments and macOS local development. On macOS, scheduled tasks use launchd (LaunchAgents), system resource monitoring uses `vm_stat` and `os.loadavg()`, and CLI tools are installed to `~/.alphaclaw/bin/`.
@@ -42,7 +41,7 @@
 
 ## Why AlphaClaw
 
-- **Zero to production in one deploy:** Railway/Render/Cloud Run templates ship a complete stack — no manual gateway setup.
+- **Zero to production in one deploy:** Railway/Render templates ship a complete stack — no manual gateway setup.
 - **Self-healing:** Watchdog detects crashes, enters repair mode, relaunches the gateway, and notifies you.
 - **Everything in the browser:** No SSH, no config files to hand-edit, no CLI required after first deploy.
 - **Stays out of the way:** AlphaClaw manages infrastructure; OpenClaw handles the AI.
@@ -57,7 +56,6 @@ AlphaClaw simply wraps OpenClaw, it's not a dependency. Remove AlphaClaw and you
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/openclaw-fast-start?referralCode=jcFhp_&utm_medium=integration&utm_source=template&utm_campaign=generic)
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/chrysb/openclaw-render-template)
-[![Run on Google Cloud](https://deploy.cloud.run/button.svg)](https://deploy.cloud.run?git_repo=https://github.com/brandongilchrist/alphaclaw)
 
 Set `SETUP_PASSWORD` at deploy time and visit your deployment URL. The welcome wizard handles the rest.
 
@@ -80,8 +78,9 @@ Or with Docker:
 FROM node:22-slim
 RUN apt-get update && apt-get install -y git curl procps cron && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY package.json ./
+COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
+COPY . .
 ENV PATH="/app/node_modules/.bin:$PATH"
 ENV ALPHACLAW_ROOT_DIR=/data
 EXPOSE 3000
