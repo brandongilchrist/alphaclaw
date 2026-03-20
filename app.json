@@ -1,0 +1,32 @@
+{
+  "name": "alphaclaw",
+  "env": {
+    "SETUP_PASSWORD": {
+      "description": "Password for the Setup UI (required, choose a strong password)",
+      "required": true
+    },
+    "GITHUB_TOKEN": {
+      "description": "GitHub Personal Access Token for workspace repo sync",
+      "required": false
+    },
+    "GITHUB_WORKSPACE_REPO": {
+      "description": "GitHub repo for workspace sync (e.g. owner/repo)",
+      "required": false
+    },
+    "TELEGRAM_BOT_TOKEN": {
+      "description": "Telegram bot token (optional)",
+      "required": false
+    },
+    "DISCORD_BOT_TOKEN": {
+      "description": "Discord bot token (optional)",
+      "required": false
+    }
+  },
+  "options": {
+    "allow-unauthenticated": true,
+    "memory": "512Mi",
+    "cpu": "1",
+    "port": 3000,
+    "max-instances": 1
+  }
+}

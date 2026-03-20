@@ -1,0 +1,8 @@
+node_modules
+.git
+tests
+.github
+*.md
+!README.md
+vitest.config.js
+.npmrc
